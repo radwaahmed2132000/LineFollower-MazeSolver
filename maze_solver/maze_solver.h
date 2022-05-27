@@ -1,52 +1,58 @@
 #include "movement.h"
 
-// TODO: check whether this is correct or not
-#define leftMostIR 5
-#define leftCenterIR 4
-#define centerIR 3
-#define rightCenterIR 2
-#define rightMostIR 1
+#define leftMostIR A5
+#define leftCenterIR A4
+#define centerIR A3
+#define rightCenterIR A2
+#define rightMostIR A1
+
 
 #define IRThreshold 400
 
-// Reads the leftmost, rightmost, and center IR sensors
-// 000 -> 0
-// 001 -> 11
-// 010 -> 5
-// 011 -> 16
-// 100 -> 1
-// 101 -> 12
-// 110 -> 6
-// 111 -> 17
-#define leftFork    6
-#define rightFork   16
-#define noPath      0
+#define leftFork    0b11100
+#define rightFork   0b00111
+#define noPath      0b00000
 
-#define onlyForward 5
-#define onlyRight 11
+#define onlyForward 0b00100
+#define onlyRight   0b00111
+#define tFork       0b11111
 
-#define tFork 17
+
+#define leftMostBit 4
+#define leftCenterBit 3
+#define CenterBit 2
+#define rightMostBit 1
+#define rightCenterBit 0
+
 
 
 #define debugIR 1
-#define debugDecision 0
+#define debugDecision 1
 
 int readSensors(){
-  int leftReading = analogRead(leftMostIR);
-  int rightReading = analogRead(rightMostIR);
+  int leftMostReading = analogRead(leftMostIR);
+  int leftCenterReading = analogRead(leftCenterIR);
+  int rightMostReading = analogRead(rightMostIR);
+  int rightCenterReading = analogRead(rightCenterIR);
   int centerReading = analogRead(centerIR);
 
-  int leftBlack = leftReading < IRThreshold;
-  int centerBlack = centerReading < IRThreshold;
-  int rightBlack = rightReading < IRThreshold;
+  int leftMostBlack = leftMostReading < IRThreshold;
+  int leftCenterBlack = leftCenterReading < IRThreshold;
 
-  int reading = leftBlack * 1 +
-                centerBlack * 5 +
-                rightBlack * 11;
+  int centerBlack = centerReading < IRThreshold;
+
+  int rightMostBlack = rightMostReading < IRThreshold;
+  int rightCenterBlack = rightCenterReading < IRThreshold;
+
+  int reading = leftMostBlack << leftMostBit |
+                leftCenterBlack << leftCenterBit |
+                centerBlack << CenterBit |
+                rightCenterBlack << rightCenterBit |
+                rightMostBlack << rightMostBit;
 
 #if debugIR == 1
-  char printBuff[32];
-  sprintf(printBuff, "%d|%d|%d, reading: %d", leftReading, centerReading, rightReading, reading);
+  char printBuff[64];
+  sprintf(printBuff, "%d|%d|%d|%d|%d, reading: %d", leftMostReading, leftCenterReading, centerReading, rightCenterReading, rightMostReading, reading);
   Serial.println(printBuff);
 #endif
 
@@ -54,6 +60,10 @@ int readSensors(){
 }
 
 void MakeDecision(char* path, int &currentIndex, int pathLength){
+  
+  followLine();
+  return;
+
   int sensorReading = readSensors();
 
   if(currentIndex == pathLength - 1){
@@ -68,7 +78,7 @@ void MakeDecision(char* path, int &currentIndex, int pathLength){
 
     case tFork:
     case leftFork: {
-      forward(forwardDelay);
+      // forward(forwardDelay);
       turnLeft(turnLeftDelay);
 
       decision = 'L';
@@ -95,7 +105,7 @@ void MakeDecision(char* path, int &currentIndex, int pathLength){
       } 
       // No forward path, only a right path
       else {
-        forward(forwardDelay);
+        // forward(forwardDelay);
         turnRight(turnRightDelay);
         decision = 'R';
       }
@@ -120,6 +130,8 @@ void MakeDecision(char* path, int &currentIndex, int pathLength){
     default: {
       // Do nothing
       decision = 'X';
+      moveLeftMotor(0);
+      moveRightMotor(0);
       break;
     }
 
