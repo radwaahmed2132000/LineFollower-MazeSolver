@@ -1,6 +1,0 @@
-{
-    "board": "arduino:avr:uno",
-    "programmer": "arduino:avrisp",
-    "port": "COM12",
-    "sketch": "maze_solver\\maze_solver.ino"
-}

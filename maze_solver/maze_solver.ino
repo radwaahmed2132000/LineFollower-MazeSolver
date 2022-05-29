@@ -1,32 +1,29 @@
+/*===============================*/
+#include <util/delay.h>
+#include "config.h"
+#include "movement.h"
 #include "maze_solver.h"
+/*===============================*/
 
-
-#define MAX_PATH 64
-char path[MAX_PATH];
-int currentIndex = 0;
-
-
-
+/*
+ * setup input & output
+ * @return void
+ */
 void setup() {
-  // IR Sensors
+  // sensor pins
   pinMode(A1, INPUT);
   pinMode(A2, INPUT);
   pinMode(A3, INPUT);
   pinMode(A4, INPUT);
   pinMode(A5, INPUT);
-
-  pinMode(leftMotorSpeedPin, OUTPUT);
-  pinMode(leftMotorDirection1, OUTPUT);
-  pinMode(leftMotorDirection2, OUTPUT);
-
-  pinMode(rightMotorSpeedPin, OUTPUT);
-  pinMode(rightMotorDirection1, OUTPUT);
-  pinMode(rightMotorDirection2, OUTPUT);
-
+  // motor pins
+  pinMode(mot1_speed, OUTPUT);
+  pinMode(mot1_dir1, OUTPUT);
+  pinMode(mot1_dir2, OUTPUT);
+  pinMode(mot2_speed, OUTPUT);
+  pinMode(mot2_dir1, OUTPUT);
+  pinMode(mot2_dir2, OUTPUT);
+  // Serial begin
   Serial.begin(9600);
 }
-
-void loop() {
-
-  MakeDecision(path, currentIndex, MAX_PATH);
-}
+void loop() { MakeDecision(path, currentIndex, MAX_PATH); }
