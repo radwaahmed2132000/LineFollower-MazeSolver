@@ -1,155 +1,411 @@
 #include <util/delay.h>
 
-
+#pragma region DEBUG_MACROS
 #define DEBUG
+#define DEBUG_IR 1
+#define DEBUG_DECISION 1
+#define DEBUG_SENSORS_ERROR_CORRECTION \
+  {                                    \
+    Serial.print(Sensors[0]);          \
+    Serial.print("|");                 \
+    Serial.print(Sensors[1]);          \
+    Serial.print("|");                 \
+    Serial.print(Sensors[2]);          \
+    Serial.print("|");                 \
+    Serial.print(Sensors[3]);          \
+    Serial.print("|");                 \
+    Serial.println(Sensors[4]);        \
+    Serial.print(delta_index.delta);   \
+    Serial.print(" | ");               \
+    Serial.print(delta_index.index);   \
+    Serial.print(" | ");               \
+    Serial.println(correction);        \
+  }
+#pragma endregion
 
+#pragma region __Pins__
+//==============================
+#pragma region MotorPins
 
-int Sensors[5];
-#define mot1_speed 3
-#define mot1_dir1 4
-#define ncounts 90
-#define mot1_dir2 5
-#define mot2_speed 6
-#define mot2_dir1 7
-#define mot2_dir2 8
+#define RIGHT_MOTOR_SPEED 3
+#define RIGHT_MOTOR_F 4
+#define RIGHT_MOTOR_B 5
+#define LEFT_MOTOR_SPEED 6
+#define LEFT_MOTOR_F 7
+#define LEFT_MOTOR_B 8
 #define maxspeedSTR 50
-// #define Kp 0.07///0.7//0.7
-// #define Kd 0.04 //0.0//0.5
 
-#define Kp  0.05f
-#define Ki  0.005f
-#define Kd  0.05f
+#pragma endregion
+//==============================
+#pragma region SensorPins
 
-int  opt_reading[5]= {970,970,970,945,945};
+#define LEFT_MOST_IR 4
+#define LEFT_CENTER_IR 3
+#define CENTER_IR 2
+#define RIGHT_CENTER_IR 1
+#define RIGHT_MOST_IR 0
+
+#pragma endregion
+//==============================
+#pragma endregion
+
+#pragma region Maze_Shapes
+
+#define LEFT_FORK_PATH 0b11100
+#define RIGHT_FORK_PATH 0b00111
+#define T_FORK_PATH 0b11111
+#define NO_PATH 0b00000
+
+#pragma endregion
+
+#pragma region CarPositions
+
+#define IR_THRESHOLD 400
+#define _CENTER_ 0b00100
+#define _LEFT_ 0b00011
+#define _RIGHT_ 0b11000
+#define IS_CENTERED (read_position() & _CENTER_)
+#define IS_LEFT (read_position() & _LEFT_)
+#define IS_RIGHT (read_position() & _RIGHT_)
+
+#pragma endregion
+
 /*________________*/
-
-float error_curr=0;
-float error_prev=0;
-float time_curr=0;
-float time_prev=0;
-
-
+int Sensors[5];
+/*________________*/
+#define Kp 0.05f
+#define Ki 0.005f
+#define Kd 0.05f
+/*________________*/
+int opt_reading[5] = {970, 970, 970, 945, 945};
+/*________________*/
+float error_curr = 0;
+float error_prev = 0;
+float time_curr = 0;
+float time_prev = 0;
 /*________________*/
 float integral;
 float diff;
 float prop;
-
-
+/*________________*/
 float time_elapsed;
-
-
+/*________________*/
 typedef struct {
   float delta;
   int index;
 } error_info_t;
+/*________________*/
+//=================================
+#pragma region MotorMotion
 
+void set_right_motor_speed(int speed) {
+  if (speed > 100) speed = 100;
+  if (speed > 0) {
+    digitalWrite(RIGHT_MOTOR_F, HIGH);
+    digitalWrite(RIGHT_MOTOR_B, LOW);
+    analogWrite(RIGHT_MOTOR_SPEED, speed);
+  } else {
+    digitalWrite(RIGHT_MOTOR_F, LOW);
+    digitalWrite(RIGHT_MOTOR_B, HIGH);
+    analogWrite(RIGHT_MOTOR_SPEED, speed);
+  }
+}
+void set_left_motor_speed(int speed) {
+  if (speed > 100) speed = 100;
+  if (speed > 0) {
+    digitalWrite(LEFT_MOTOR_F, HIGH);
+    digitalWrite(LEFT_MOTOR_B, LOW);
+    analogWrite(LEFT_MOTOR_SPEED, speed);
+  } else {
+    digitalWrite(LEFT_MOTOR_F, LOW);
+    digitalWrite(LEFT_MOTOR_B, HIGH);
+    analogWrite(LEFT_MOTOR_SPEED, speed);
+  }
+}
+#pragma endregion
+//=================================
+void read_sensors() {
+  Sensors[0] = analogRead(A1);
+  Sensors[1] = analogRead(A2);
+  Sensors[2] = analogRead(A3);
+  Sensors[3] = analogRead(A4);
+  Sensors[4] = analogRead(A5);
+}
+//=================================
+/*
+ ! Returns a bit sequence (a byte) that determines the current positioning of
+ ! the car.
+ ! INVARIANT : read_sensors() can only be called in this function
+*/
+uint8_t read_position() {
+  // ? neccessary to update the sensors' readings
+  // ? try to only call it here
+  read_sensors();
+  uint8_t leftMostBlack = Sensors[LEFT_MOST_IR] < IR_THRESHOLD;
+  uint8_t leftCenterBlack = Sensors[LEFT_CENTER_IR] < IR_THRESHOLD;
+  uint8_t centerBlack = Sensors[CENTER_IR] < IR_THRESHOLD;
+  uint8_t rightCenterBlack = Sensors[RIGHT_CENTER_IR] < IR_THRESHOLD;
+  uint8_t rightMostBlack = Sensors[RIGHT_MOST_IR] < IR_THRESHOLD;
 
-float pid_control(){
+  uint8_t reading =
+      leftMostBlack << LEFT_MOST_BIT | leftCenterBlack << LEFT_CENTER_BIT |
+      centerBlack << CENTER_BIT | rightCenterBlack << RIGHT_CENTER_BIT |
+      rightMostBlack << RIGHT_MOST_BIT;
+
+#if DEBUG_IR == 1
+  char printBuff[64];
+  sprintf(printBuff, "sensor_readings: %d|%d|%d|%d|%d, position: %d",
+          leftMostReading, leftCenterReading, centerReading, rightCenterReading,
+          rightMostReading, reading);
+  Serial.println(printBuff);
+#endif
+
+  return reading;
+}
+//=================================
+#pragma region Direction_Movement
+
+void move_forward(int speed) {
+  set_left_motor_speed(speed);
+  set_right_motor_speed(speed);
+  while (IS_CENTERED)
+    ;
+  set_left_motor_speed(0);
+  set_right_motor_speed(0);
+}
+
+void move_backward(int speed) {
+  set_left_motor_speed(-speed);
+  set_right_motor_speed(-speed);
+  while (IS_CENTERED)
+    ;
+  set_left_motor_speed(0);
+  set_right_motor_speed(0);
+}
+/*
+  ! This is similar to rotate_left, except it rotates until it sees a line,
+  ! **NOT**  until it is centered, rotation is counterclockwise
+*/
+void rotate_until_line(int speed) {
+  set_left_motor_speed(-speed);
+  set_right_motor_speed(speed);
+  while (!read_position())
+    ;
+  set_left_motor_speed(0);
+  set_right_motor_speed(0);
+}
+
+/*
+ ! Checks if the center sensor is on black if not; keeps rotating left, until
+ ! corrected.
+ */
+void rotate_left(int speed) {
+  set_left_motor_speed(-speed);
+  set_right_motor_speed(speed);
+
+  while (!IS_CENTERED)
+    ;
+  set_left_motor_speed(0);
+  set_right_motor_speed(0);
+}
+//=================================
+
+void rotate_right(int speed) {
+  set_left_motor_speed(speed);
+  set_right_motor_speed(-speed);
+  while (!IS_CENTERED)
+    ;
+
+  set_left_motor_speed(0);
+  set_right_motor_speed(0);
+}
+#pragma endregion
+
+inline void follow_and_solve(char*, int, int) __attribute__((always_inline));
+void follow_and_solve(char* path, int* currentIndex, int pathLength) {
+  if (currentIndex == pathLength - 1) {
+    Serial.println("PATH ARRAY FULL");
+  }
+
+  //! XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  //? WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
+  int speed = 0;
+  //? WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
+  //! XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+  switch (read_position()) {
+    char decision = ' ';
+
+    case NO_PATH: {
+      rotate_until_line(speed);
+      break;
+    }
+    case T_FORK_PATH:
+    case LEFT_FORK_PATH: {
+      rotate_left(speed);
+      break;
+    }
+    case RIGHT_FORK_PATH: {
+      // ? This should work, there are two cases:
+      // ? 1) There is a forward path, then the car will move forward until the
+      // ? car is not centered and start again
+      // ? 2) There is no forward path, then  the car will move forward, find
+      // ? that there is no path, the next ? iteration, it rotates a full
+      // ? rotation until it finds a line, the new left after rotation is the
+      // ? old right
+      move_forward(speed);
+      break;
+    }
+  }
+
+  if (IS_CENTERED) {
+    move_forward(speed);
+  }
+  if (IS_LEFT) {
+    rotate_right(speed);
+  }
+  if (IS_RIGHT) {
+    rotate_left(speed);
+  }
+}
+void MakeDecision(char* path, int& currentIndex, int pathLength) {
+  int sensorReading = read_position();
+
+  if (currentIndex == pathLength - 1) {
+    Serial.println("PATH ARRAY FULL");
+  }
+
+  char decision = ' ';
+
+  // LSRB Algorithm
+
+  switch (sensorReading) {
+    case T_FORK:
+
+    case LEFT_FORK: {
+      // forward(forwardDelay);
+      turnLeft(turnLeftDelay);
+      path[currentIndex] = 'L';
+      currentIndex++;
+      break;
+    }
+
+    case RIGHT_FORK: {
+      // Go forward a bit to check for a straight road
+      float nudge = 1 / 10;
+
+      // Used for when there's a forward path to go the rest of the way
+      // So that we go forward (1*forwardDelay) in total
+      float remainder = 1 - nudge;
+
+      // Go forward a bit to check if there's a straight road ahead
+      // forwardDelay/10 is an arbitrary choice here
+      forward(forwardDelay * nudge);
+
+      sensorReading = readSensors();
+
+      // There's also a forwad path
+      if (sensorReading == ONLY_FORWARD) {
+        forward(forwardDelay * remainder);
+        decision = 'F';
+      }
+      // No forward path, only a right path
+      else {
+        // forward(forwardDelay);
+        turnRight(turnRightDelay);
+        decision = 'R';
+      }
+      path[currentIndex] = decision;
+      currentIndex++;
+
+      break;
+    }
+
+    case ONLY_FORWARD: {
+      forward(forwardDelay);
+      path[currentIndex] = 'F';
+      currentIndex++;
+      break;
+    }
+
+    case NO_PATH: {
+      turnLeft(2 * turnLeftDelay);
+      path[currentIndex] = 'B';
+      currentIndex++;
+      break;
+    }
+
+    default: {
+      // Do nothing
+      moveLeftMotor(0);
+      moveRightMotor(0);
+      break;
+    }
+  }
+
+#if DEBUG_DECISION == 1
+  char printBuff[11];
+  sprintf(printBuff, "Decision %c", decision);
+  Serial.println(printBuff);
+#endif
+}
+//=================================
+
+float pid_control() {
   time_curr = millis();
   time_elapsed = time_curr - time_prev;
   time_prev = time_curr;
 
   integral += Ki * (time_elapsed * error_curr);
   diff = Kd * (error_curr - error_prev) / time_elapsed;
-  prop = Kp*error_curr;
-  
+  prop = Kp * error_curr;
+
   error_prev = error_curr;
 
-  return integral+diff+prop; 
+  return integral + diff + prop;
 }
 
-
-#pragma region Motion
-
-
-void set_mot1_speed(int speed){
-  if (speed>100) speed=100;
-  if(speed>0){
-    digitalWrite(mot1_dir1,HIGH);
-    digitalWrite(mot1_dir2,LOW);
-    analogWrite(mot1_speed,speed);
-  }else{
-    digitalWrite(mot1_dir1,LOW);
-    digitalWrite(mot1_dir2,HIGH);
-    analogWrite(mot1_speed,speed);
-  }
-}
-void set_mot2_speed(int speed){
-  if (speed>100) speed=100    ;
-  if(speed>0){
-    digitalWrite(mot2_dir1,HIGH);
-    digitalWrite(mot2_dir2,LOW);
-    analogWrite(mot2_speed,speed);
-  }else{
-    digitalWrite(mot2_dir1,LOW);
-    digitalWrite(mot2_dir2,HIGH);
-    analogWrite(mot2_speed,speed);
-  }
-}
-#pragma endregion
-
-
-error_info_t calculate_error(){
+error_info_t calculate_error() {
   float differences[5];
-  for(int i = 0;i<5;i++)
-  {
+  for (int i = 0; i < 5; i++) {
     differences[i] = Sensors[i] - opt_reading[i];
   }
-  float max_diff = abs(differences [0]);
+  float max_diff = abs(differences[0]);
   int max_diff_index = 0;
-  for(int i=1;i<5;i++){
-    max_diff =  max_diff < abs(differences[i])  ? (max_diff_index = i , abs(differences[i])):max_diff;
+  for (int i = 1; i < 5; i++) {
+    max_diff = max_diff < abs(differences[i])
+                   ? (max_diff_index = i, abs(differences[i]))
+                   : max_diff;
   }
   return {differences[max_diff_index], max_diff_index};
-
 }
-
 
 void setup() {
   // put your setup code here, to run once:
- pinMode(A1,INPUT);
- pinMode(A2,INPUT);
- pinMode(A3,INPUT);
- pinMode(A4,INPUT);
- pinMode(A5,INPUT);
- pinMode(mot1_speed,OUTPUT);
- pinMode(mot1_dir1,OUTPUT);
- pinMode(mot1_dir2,OUTPUT);
- pinMode(mot2_speed,OUTPUT);
- pinMode(mot2_dir1,OUTPUT);
- pinMode(mot2_dir2,OUTPUT);
- Serial.begin(9600);
- time_prev = millis();
+  pinMode(A1, INPUT);
+  pinMode(A2, INPUT);
+  pinMode(A3, INPUT);
+  pinMode(A4, INPUT);
+  pinMode(A5, INPUT);
+  pinMode(RIGHT_MOTOR_SPEED, OUTPUT);
+  pinMode(RIGHT_MOTOR_F, OUTPUT);
+  pinMode(RIGHT_MOTOR_B, OUTPUT);
+  pinMode(LEFT_MOTOR_SPEED, OUTPUT);
+  pinMode(LEFT_MOTOR_F, OUTPUT);
+  pinMode(LEFT_MOTOR_B, OUTPUT);
+  Serial.begin(9600);
+  time_prev = millis();
 }
 
-void loop(){
- Sensors[0]=analogRead(A1);
- Sensors[1]=analogRead(A2);
- Sensors[2]=analogRead(A3);
- Sensors[3]=analogRead(A4);
- Sensors[4]=analogRead(A5);
-
- error_info_t delta_index = calculate_error();
- error_curr = delta_index.delta; 
- float correction = pid_control();
-
-// #undef DEBUG
+#define MAX_PATH 64
+char path[MAX_PATH];
+int currentIndex[1] = {0};
+void loop() {
+  // error_info_t delta_index = calculate_error();
+  // error_curr = delta_index.delta;
+  // float correction = pid_control();
+  follow_and_solve(path, currentIndex, MAX_PATH);
 #ifdef DEBUG
-Serial.print(Sensors[0]);
-Serial.print("|");
-Serial.print(Sensors[1]);
-Serial.print("|");
-Serial.print(Sensors[2]);
-Serial.print("|");
-Serial.print(Sensors[3]);
-Serial.print("|");
-Serial.println(Sensors[4]);
-Serial.print(delta_index.delta);
-Serial.print(" | ");
-Serial.print(delta_index.index);
-Serial.print(" | ");
-Serial.println(correction);
+  DEBUG_SENSORS_ERROR_CORRECTION
 #endif
-
- 
 }
