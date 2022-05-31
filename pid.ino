@@ -2,7 +2,7 @@
 
 #pragma region DEBUG_MACROS
 #define DEBUG
-#define DEBUG_IR 1
+#define DEBUG_IR
 #define DEBUG_DECISION 1
 #define DEBUG_SENSORS_ERROR_CORRECTION \
   {                                    \
@@ -15,12 +15,12 @@
     Serial.print(Sensors[3]);          \
     Serial.print("|");                 \
     Serial.println(Sensors[4]);        \
-    Serial.print(delta_index.delta);   \
+  }
+  // Serial.print(delta_index.delta);  \
     Serial.print(" | ");               \
     Serial.print(delta_index.index);   \
     Serial.print(" | ");               \
-    Serial.println(correction);        \
-  }
+    //Serial.println(correction);        
 #pragma endregion
 
 #pragma region __Pins__
@@ -148,17 +148,10 @@ uint8_t read_position() {
   uint8_t rightMostBlack = Sensors[RIGHT_MOST_IR] < IR_THRESHOLD;
 
   uint8_t reading =
-      leftMostBlack << LEFT_MOST_BIT | leftCenterBlack << LEFT_CENTER_BIT |
-      centerBlack << CENTER_BIT | rightCenterBlack << RIGHT_CENTER_BIT |
-      rightMostBlack << RIGHT_MOST_BIT;
+      leftMostBlack << LEFT_MOST_IR | leftCenterBlack << LEFT_CENTER_IR |
+      centerBlack << CENTER_IR | rightCenterBlack << RIGHT_CENTER_IR |
+      rightMostBlack << RIGHT_MOST_IR;
 
-#if DEBUG_IR == 1
-  char printBuff[64];
-  sprintf(printBuff, "sensor_readings: %d|%d|%d|%d|%d, position: %d",
-          leftMostReading, leftCenterReading, centerReading, rightCenterReading,
-          rightMostReading, reading);
-  Serial.println(printBuff);
-#endif
 
   return reading;
 }
@@ -221,20 +214,20 @@ void rotate_right(int speed) {
 }
 #pragma endregion
 
-inline void follow_and_solve(char*, int, int) __attribute__((always_inline));
+inline void follow_and_solve(char*, int*, int) __attribute__((always_inline));
 void follow_and_solve(char* path, int* currentIndex, int pathLength) {
-  if (currentIndex == pathLength - 1) {
+  if (*currentIndex == pathLength - 1) {
     Serial.println("PATH ARRAY FULL");
   }
 
   //! XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
   //? WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
-  int speed = 0;
+  int speed = 60;
   //? WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
   //! XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
+  char decision = ' ';
   switch (read_position()) {
-    char decision = ' ';
 
     case NO_PATH: {
       rotate_until_line(speed);
@@ -267,87 +260,6 @@ void follow_and_solve(char* path, int* currentIndex, int pathLength) {
   if (IS_RIGHT) {
     rotate_left(speed);
   }
-}
-void MakeDecision(char* path, int& currentIndex, int pathLength) {
-  int sensorReading = read_position();
-
-  if (currentIndex == pathLength - 1) {
-    Serial.println("PATH ARRAY FULL");
-  }
-
-  char decision = ' ';
-
-  // LSRB Algorithm
-
-  switch (sensorReading) {
-    case T_FORK:
-
-    case LEFT_FORK: {
-      // forward(forwardDelay);
-      turnLeft(turnLeftDelay);
-      path[currentIndex] = 'L';
-      currentIndex++;
-      break;
-    }
-
-    case RIGHT_FORK: {
-      // Go forward a bit to check for a straight road
-      float nudge = 1 / 10;
-
-      // Used for when there's a forward path to go the rest of the way
-      // So that we go forward (1*forwardDelay) in total
-      float remainder = 1 - nudge;
-
-      // Go forward a bit to check if there's a straight road ahead
-      // forwardDelay/10 is an arbitrary choice here
-      forward(forwardDelay * nudge);
-
-      sensorReading = readSensors();
-
-      // There's also a forwad path
-      if (sensorReading == ONLY_FORWARD) {
-        forward(forwardDelay * remainder);
-        decision = 'F';
-      }
-      // No forward path, only a right path
-      else {
-        // forward(forwardDelay);
-        turnRight(turnRightDelay);
-        decision = 'R';
-      }
-      path[currentIndex] = decision;
-      currentIndex++;
-
-      break;
-    }
-
-    case ONLY_FORWARD: {
-      forward(forwardDelay);
-      path[currentIndex] = 'F';
-      currentIndex++;
-      break;
-    }
-
-    case NO_PATH: {
-      turnLeft(2 * turnLeftDelay);
-      path[currentIndex] = 'B';
-      currentIndex++;
-      break;
-    }
-
-    default: {
-      // Do nothing
-      moveLeftMotor(0);
-      moveRightMotor(0);
-      break;
-    }
-  }
-
-#if DEBUG_DECISION == 1
-  char printBuff[11];
-  sprintf(printBuff, "Decision %c", decision);
-  Serial.println(printBuff);
-#endif
 }
 //=================================
 
