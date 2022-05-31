@@ -62,8 +62,8 @@
 
 #define IR_THRESHOLD 400
 #define _CENTER_ 0b00100
-#define _LEFT_ 0b00011
-#define _RIGHT_ 0b11000
+#define _LEFT_ 0b11000
+#define _RIGHT_ 0b00011
 #define IS_CENTERED (read_position() & _CENTER_)
 #define IS_LEFT (read_position() & _LEFT_)
 #define IS_RIGHT (read_position() & _RIGHT_)
@@ -255,10 +255,10 @@ void follow_and_solve(char* path, int* currentIndex, int pathLength) {
     move_forward(speed);
   }
   if (IS_LEFT) {
-    rotate_right(speed);
+    rotate_left(speed);
   }
   if (IS_RIGHT) {
-    rotate_left(speed);
+    rotate_right(speed);
   }
 }
 //=================================
